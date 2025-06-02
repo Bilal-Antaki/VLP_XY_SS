@@ -1,148 +1,3 @@
-<<<<<<< HEAD
-# src/training/train_enhanced.py
-from src.models.model_registry import get_model
-from src.data.loader import load_cir_data, extract_features_and_target
-from src.evaluation.metrics import calculate_all_metrics
-from src.config import DATA_CONFIG
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.preprocessing import StandardScaler
-import numpy as np
-import pandas as pd
-import time
-import warnings
-warnings.filterwarnings('ignore')
-
-def train_model_with_metrics(model_name, X_train, X_test, y_train, y_test, **model_kwargs):
-    """Train a model and calculate comprehensive metrics"""
-    start_time = time.time()
-    
-    try:
-        # Get and train model
-        model = get_model(model_name, **model_kwargs)
-        model.fit(X_train, y_train)
-        
-        # Predict
-        y_pred = model.predict(X_test)
-        
-        # Training time
-        train_time = time.time() - start_time
-        
-        # Calculate metrics
-        metrics = calculate_all_metrics(y_test, y_pred, model_name)
-        metrics['train_time'] = train_time
-        
-        # Cross-validation if model supports it
-        try:
-            cv_scores = cross_val_score(model, X_train, y_train, cv=5, 
-                                      scoring='neg_mean_squared_error', n_jobs=-1)
-            metrics['cv_rmse'] = np.sqrt(-cv_scores.mean())
-            metrics['cv_std'] = np.sqrt(cv_scores.std())
-        except:
-            metrics['cv_rmse'] = np.nan
-            metrics['cv_std'] = np.nan
-        
-        return {
-            'success': True,
-            'model': model,
-            'y_pred': y_pred,
-            'y_test': y_test,
-            'metrics': metrics,
-            'name': model_name
-        }
-        
-    except Exception as e:
-        print(f"Error training {model_name}: {str(e)}")
-        return {
-            'success': False,
-            'error': str(e),
-            'name': model_name
-        }
-
-def train_all_models_enhanced(processed_dir: str, test_size: float = 0.2, 
-                            include_slow_models: bool = False,
-                            include_deep_learning: bool = False):
-    """
-    Train and compare Linear and SVR models with comprehensive metrics
-    """
-    print("Enhanced Model Training and Evaluation")
-    print("=" * 60)
-    
-    # Load data
-    print("Loading data...")
-    df = load_cir_data(processed_dir, filter_keyword=DATA_CONFIG['datasets'][0])
-    print(f"Using dataset: {DATA_CONFIG['datasets'][0]}")
-    X, y = extract_features_and_target(df)
-    
-    print(f"Dataset shape: {X.shape}")
-    print(f"Features: {list(X.columns)}")
-    print(f"Target range: [{y.min():.2f}, {y.max():.2f}]")
-    print(f"Target mean: {y.mean():.2f}, std: {y.std():.2f}")
-    
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=42
-    )
-    
-    # Scale features
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-    
-    # Define models to test - ONLY Linear and SVR variants
-    model_configs = [
-        # Linear models
-        ('Linear Regression', 'linear', {}, False),
-        
-        # SVM models
-        ('SVR RBF', 'svr', {}, False)
-    ]
-    
-    # Train all models
-    results = []
-    successful_results = []
-    
-    print(f"\nTraining model configurations...")
-    print("-" * 60)
-    
-    for display_name, model_name, kwargs, needs_scaling in model_configs:
-        print(f"\nTraining {display_name}...", end=' ', flush=True)
-        
-        # Use scaled or unscaled data
-        X_tr = X_train_scaled if needs_scaling else X_train
-        X_te = X_test_scaled if needs_scaling else X_test
-        
-        result = train_model_with_metrics(
-            model_name, X_tr, X_te, y_train, y_test, **kwargs
-        )
-        
-        if result['success']:
-            # Format time properly
-            train_time = result['metrics']['train_time']
-            if train_time < 1:
-                time_str = f"{train_time:.3f}s"
-            else:
-                time_str = f"{train_time:.2f}s"
-            
-            print(f"✓ RMSE: {result['metrics']['rmse']:.4f}, Time: {time_str}")
-            results.append(result)
-            successful_results.append({
-                'name': display_name,
-                'y_true': y_test,
-                'y_pred': result['y_pred']
-            })
-        else:
-            print(f"✗ Failed: {result['error']}")
-    
-    if not results:
-        print("\nNo models trained successfully!")
-        return None, None, None
-    
-    return results
-=======
-"""
-Training script for Linear Regression baseline model
-"""
-
 import numpy as np
 import pandas as pd
 import sys
@@ -154,6 +9,7 @@ import joblib
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
+
 from src.models.linear import LinearBaselineModel
 from src.config import TRAINING_CONFIG
 
@@ -165,195 +21,49 @@ def set_seed(seed=42):
     os.environ['PYTHONHASHSEED'] = str(seed)
 
 
-def prepare_data():
-    """
-    Load and prepare data for linear model
-    """
-    # Load selected features
-    df = pd.read_csv('data/features/features_selected.csv')
-    
-    # Get feature columns
-    feature_cols = [col for col in df.columns 
-                   if col not in ['X', 'Y', 'trajectory_id', 'step_id']]
-    
-    print(f"Using features: {feature_cols}")
-    
-    # Split by trajectory IDs
-    train_traj_ids = list(range(16))
-    val_traj_ids = list(range(16, 20))
-    
-    # Prepare training data
-    train_df = df[df['trajectory_id'].isin(train_traj_ids)]
-    X_train = train_df[feature_cols].values
-    Y_train = train_df[['X', 'Y']].values
-    
-    # Prepare validation data
-    val_df = df[df['trajectory_id'].isin(val_traj_ids)]
-    X_val = val_df[feature_cols].values
-    Y_val = val_df[['X', 'Y']].values
-    
-    # Get trajectory structure for validation
-    val_trajectories = []
-    for traj_id in val_traj_ids:
-        traj_data = df[df['trajectory_id'] == traj_id].sort_values('step_id')
-        if len(traj_data) == 10:
-            val_trajectories.append({
-                'X': traj_data[feature_cols].values,
-                'Y': traj_data[['X', 'Y']].values,
-                'id': traj_id
-            })
-    
-    print(f"Training samples: {len(X_train)}")
-    print(f"Validation samples: {len(X_val)}")
-    print(f"Feature dimension: {X_train.shape[1]}")
-    
-    return (X_train, Y_train, X_val, Y_val), val_trajectories
-
-
-def evaluate_trajectories(model, trajectories):
-    """
-    Evaluate model on trajectory level (not just individual points)
-    """
-    rmse_x_list = []
-    rmse_y_list = []
-    
-    for traj in trajectories:
-        # Predict
-        predictions = model.predict(traj['X'])
-        
-        # Calculate RMSE for this trajectory
-        rmse_x = np.sqrt(mean_squared_error(traj['Y'][:, 0], predictions[:, 0]))
-        rmse_y = np.sqrt(mean_squared_error(traj['Y'][:, 1], predictions[:, 1]))
-        
-        rmse_x_list.append(rmse_x)
-        rmse_y_list.append(rmse_y)
-    
-    return np.array(rmse_x_list), np.array(rmse_y_list)
-
-
 def train_model():
-    """Train linear baseline model"""
-    # Set random seed for reproducibility
     set_seed(TRAINING_CONFIG['random_seed'])
     
-    # Prepare data
-    (X_train, Y_train, X_val, Y_val), val_trajectories = prepare_data()
+    # Load all 200 points
+    df = pd.read_csv('data/features/features_selected.csv')
     
-    # Initialize model
+    # Get features
+    feature_cols = [col for col in df.columns if col not in ['X', 'Y', 'trajectory_id', 'step_id']]
+    
+    # Train on first 160, validate on last 40
+    X_train = df.iloc[:160][feature_cols].values
+    Y_train = df.iloc[:160][['X', 'Y']].values
+    
+    X_val = df.iloc[160:][feature_cols].values
+    Y_val = df.iloc[160:][['X', 'Y']].values
+    
+    # Train model
     model = LinearBaselineModel()
-    
-    print("\nTraining Linear Regression baseline model...")
-    
-    # Fit the model
     model.fit(X_train, Y_train)
     
-    print("Training complete!")
+    # Predict
+    predictions = model.predict(X_val)
     
-    # Save the model
+    # Evaluate
+    rmse_x = np.sqrt(mean_squared_error(Y_val[:, 0], predictions[:, 0]))
+    rmse_y = np.sqrt(mean_squared_error(Y_val[:, 1], predictions[:, 1]))
+    
+    print(f"Validation RMSE - X: {rmse_x:.2f}, Y: {rmse_y:.2f}")
+    
+    # Save model
     model_dir = Path('results/models')
     model_dir.mkdir(parents=True, exist_ok=True)
-    model_path = model_dir / 'linear_baseline_model.pkl'
     
-    # Save using joblib (better for scikit-learn models)
     joblib.dump({
         'model': model,
         'feature_count': X_train.shape[1],
         'training_config': TRAINING_CONFIG
-    }, model_path)
+    }, model_dir / 'linear_baseline_model.pkl')
     
-    print(f"\nModel saved to: {model_path}")
+    print(f"Model saved to: {model_dir / 'linear_baseline_model.pkl'}")
     
-    # Evaluate on validation set (point-wise)
-    val_pred = model.predict(X_val)
-    
-    # Point-wise metrics
-    rmse_x_points = np.sqrt(mean_squared_error(Y_val[:, 0], val_pred[:, 0]))
-    rmse_y_points = np.sqrt(mean_squared_error(Y_val[:, 1], val_pred[:, 1]))
-    
-    print(f"\nPoint-wise Validation Metrics:")
-    print(f"RMSE X: {rmse_x_points:.2f}")
-    print(f"RMSE Y: {rmse_y_points:.2f}")
-    
-    # Trajectory-level evaluation
-    rmse_x_trajs, rmse_y_trajs = evaluate_trajectories(model, val_trajectories)
-    
-    print(f"\nTrajectory-level Validation Metrics:")
-    print(f"X-coordinate:")
-    print(f"  RMSE: {rmse_x_trajs.mean():.2f}")
-    print(f"  Std: {rmse_x_trajs.std():.2f}")
-    
-    print(f"Y-coordinate:")
-    print(f"  RMSE: {rmse_y_trajs.mean():.2f}")
-    print(f"  Std: {rmse_y_trajs.std():.2f}")
-    
-    # Combined metric
-    rmse_combined = np.sqrt((rmse_x_trajs**2 + rmse_y_trajs**2) / 2)
-    print(f"\nCombined RMSE: {rmse_combined.mean():.2f} ± {rmse_combined.std():.2f}")
-    
-    # Print sample predictions
-    if val_trajectories:
-        sample_traj = val_trajectories[0]
-        sample_pred = model.predict(sample_traj['X'])
-        
-        print(f"\nSample predictions for trajectory {sample_traj['id']}:")
-        print("Step | True X | Pred X | True Y | Pred Y")
-        print("-" * 45)
-        for i in range(min(5, len(sample_pred))):  # Show first 5 steps
-            print(f"{i+1:4d} | {sample_traj['Y'][i, 0]:6.0f} | {sample_pred[i, 0]:6.0f} | "
-                  f"{sample_traj['Y'][i, 1]:6.0f} | {sample_pred[i, 1]:6.0f}")
-
-
-def load_and_evaluate():
-    """Load saved model and evaluate"""
-    model_path = Path('results/models/linear_baseline_model.pkl')
-    
-    if not model_path.exists():
-        print(f"Model not found at {model_path}. Train the model first.")
-        return
-    
-    # Load model
-    checkpoint = joblib.load(model_path)
-    model = checkpoint['model']
-    
-    print(f"Model loaded from: {model_path}")
-    
-    # Load test data
-    df = pd.read_csv('data/features/features_selected.csv')
-    feature_cols = [col for col in df.columns 
-                   if col not in ['X', 'Y', 'trajectory_id', 'step_id']]
-    
-    # Test on a specific trajectory
-    test_traj_id = 19
-    test_data = df[df['trajectory_id'] == test_traj_id].sort_values('step_id')
-    
-    if len(test_data) == 10:
-        X_test = test_data[feature_cols].values
-        Y_test = test_data[['X', 'Y']].values
-        
-        # Predict
-        predictions = model.predict(X_test)
-        
-        print(f"\nPredictions for trajectory {test_traj_id}:")
-        print("Step | True X | Pred X | True Y | Pred Y | Error X | Error Y")
-        print("-" * 70)
-        for i in range(len(predictions)):
-            error_x = abs(Y_test[i, 0] - predictions[i, 0])
-            error_y = abs(Y_test[i, 1] - predictions[i, 1])
-            print(f"{i+1:4d} | {Y_test[i, 0]:6.0f} | {predictions[i, 0]:6.0f} | "
-                  f"{Y_test[i, 1]:6.0f} | {predictions[i, 1]:6.0f} | "
-                  f"{error_x:7.1f} | {error_y:7.1f}")
-        
-        # Overall metrics
-        mae_x = np.mean(np.abs(Y_test[:, 0] - predictions[:, 0]))
-        mae_y = np.mean(np.abs(Y_test[:, 1] - predictions[:, 1]))
-        rmse_x = np.sqrt(mean_squared_error(Y_test[:, 0], predictions[:, 0]))
-        rmse_y = np.sqrt(mean_squared_error(Y_test[:, 1], predictions[:, 1]))
-        
-        print(f"\nMetrics for trajectory {test_traj_id}:")
-        print(f"MAE  - X: {mae_x:.2f}, Y: {mae_y:.2f}")
-        print(f"RMSE - X: {rmse_x:.2f}, Y: {rmse_y:.2f}")
+    return predictions, Y_val
 
 
 if __name__ == "__main__":
-    train_model()
->>>>>>> main
+    predictions, Y_val = train_model()

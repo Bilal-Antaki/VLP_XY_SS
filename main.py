@@ -1,388 +1,165 @@
-from src.data.feature_engineering import create_engineered_features, select_features
-from src.config import DATA_CONFIG, ANALYSIS_CONFIG, TRAINING_OPTIONS
-from src.training.train_linear import train_all_models_enhanced
-from src.training.train_lstm import train_lstm_on_all
-from src.training.train_gru import train_gru_on_all
-from src.data.loader import load_cir_data
-from src.utils.visualizations import plot_actual_vs_estimated
-import matplotlib.pyplot as plt
-import pandas as pd
+import sys
+from pathlib import Path
 import numpy as np
+import pandas as pd
 import warnings
-import torch
-import time
 import os
+import time
 
 warnings.filterwarnings('ignore')
 
-def create_predictions_dataframe(model_results):
-    """Create a consolidated DataFrame of actual values and predictions from all models"""
-    predictions_dict = {}
-    
-    # First, find the LSTM result to get the base length and actual values
-    lstm_result = None
-    for result in model_results:
-        if result['name'].lower() == 'lstm' and result.get('predictions'):
-            lstm_result = result
-            break
-    
-    if lstm_result is None:
-        return pd.DataFrame()
-    
-    # Use LSTM's actual values and predictions
-    if 'y_test' in lstm_result['predictions']:
-        predictions_dict['r_actual'] = lstm_result['predictions']['y_test']
-        predictions_dict['r_lstm'] = lstm_result['predictions']['y_pred']
-    else:
-        return pd.DataFrame()
-    
-    # Only include other models if their predictions match LSTM length
-    base_length = len(predictions_dict['r_actual'])
-    
-    for result in model_results:
-        if result['name'].lower() == 'lstm':
-            continue
-            
-        if result.get('predictions') and len(result['predictions']['y_test']) == base_length:
-            model_name = result['name'].lower()
-            predictions_dict[f'r_{model_name}'] = result['predictions']['y_pred']
-    
-    return pd.DataFrame(predictions_dict)
+# Add src to path
+sys.path.append(str(Path(__file__).parent))
+
+from src.training.train_linear import train_model as train_linear
+from src.training.train_lstm import train_model as train_lstm
+from src.training.train_svr import train_model as train_svr
+from src.training.train_rf import train_model as train_rf
+from src.training.train_xgb import train_model as train_xgb
+from src.utils.visualizations import plot_actual_vs_estimated
 
 
-def run_analysis():
-    """Run analysis with Linear, SVR, and LSTM models"""
+def print_header():
+    """Print analysis header"""
     print("=" * 80)
-    print(" " * 20 + "COMPREHENSIVE POSITION ESTIMATION ANALYSIS")
+    print(" " * 20 + "POSITION ESTIMATION MODEL COMPARISON")
+    print(" " * 30 + "Single Sequence Analysis")
     print("=" * 80)
+
+
+def train_all_models():
+    """Train all models and collect results"""
+    print_header()
     
-    # Create results directory if it doesn't exist
+    # Create results directory
     os.makedirs('results/models', exist_ok=True)
+    os.makedirs('results/plots', exist_ok=True)
     
-    # Generate timestamp for this run
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    # Check if features exist
+    if not Path('data/features/features_selected.csv').exists():
+        print("\n⚠️  Features not found! Run main_preprocessing.py first.")
+        return None
     
-    # 1. Load and explore data
-    print("\n1. Loading and exploring data...")
-    df_list = []
+    # Define models to train
+    models = [
+        ('Linear', train_linear),
+        ('SVR', train_svr),
+        ('Random Forest', train_rf),
+        ('XGBoost', train_xgb)
+        ('LSTM', train_lstm)
+    ]
     
-    # Load all available datasets
-    for keyword in DATA_CONFIG['datasets']:
+    results = []
+    
+    print("\n📊 Training Models")
+    print("-" * 60)
+    
+    for model_name, train_func in models:
+        print(f"\n🔄 Training {model_name}...")
         try:
-            df_temp = load_cir_data(DATA_CONFIG['processed_dir'], filter_keyword=keyword)
-            print(f"  Loaded {keyword}: {len(df_temp)} samples")
-            df_list.append(df_temp)
-        except:
-            print(f"  {keyword} not found")
+            start_time = time.time()
+            predictions, Y_val = train_func()
+            train_time = time.time() - start_time
+            
+            # Calculate combined RMSE
+            rmse_x = np.sqrt(np.mean((Y_val[:, 0] - predictions[:, 0]) ** 2))
+            rmse_y = np.sqrt(np.mean((Y_val[:, 1] - predictions[:, 1]) ** 2))
+            rmse_combined = np.sqrt((rmse_x**2 + rmse_y**2) / 2)
+            
+            results.append({
+                'model': model_name,
+                'predictions': predictions,
+                'Y_val': Y_val,
+                'rmse_x': rmse_x,
+                'rmse_y': rmse_y,
+                'rmse_combined': rmse_combined,
+                'train_time': train_time
+            })
+            
+            print(f"✅ {model_name} - RMSE: X={rmse_x:.2f}, Y={rmse_y:.2f}, Combined={rmse_combined:.2f}")
+            print(f"   Training time: {train_time:.2f}s")
+            
+            # Plot actual vs estimated
+            plot_actual_vs_estimated(
+                Y_val[:, 0],  # Actual X values
+                predictions[:, 0],  # Predicted X values
+                model_name=f"{model_name} (X-coordinate)"
+            )
+            
+            plot_actual_vs_estimated(
+                Y_val[:, 1],  # Actual Y values
+                predictions[:, 1],  # Predicted Y values
+                model_name=f"{model_name} (Y-coordinate)"
+            )
+            
+        except Exception as e:
+            print(f"❌ {model_name} failed: {str(e)}")
+            continue
     
-    # Combine all data
-    df_all = pd.concat(df_list, ignore_index=True) if df_list else None
-    
-    if df_all is None:
-        print("No data found!")
+    return results
+
+
+def print_summary(results):
+    """Print summary of results"""
+    if not results:
+        print("\n❌ No models trained successfully!")
         return
     
-    # 2. Feature Engineering
-    print("\n2. Feature Engineering...")
-    df_engineered = create_engineered_features(df_all, include_categorical=True)
-    
-    # Select features - exclude any coordinate-based features
-    feature_cols = [col for col in df_engineered.columns 
-                   if col not in ANALYSIS_CONFIG['feature_selection']['excluded_features']]
-    
-    X = df_engineered[feature_cols]
-    y = df_engineered[DATA_CONFIG['target_column']]
-
-    # Select best features
-    selected_features = select_features(
-        X, y, 
-        method='correlation', 
-        threshold=ANALYSIS_CONFIG['feature_selection']['correlation_threshold']
-    )
-    print(f"  Selected {len(selected_features)} features from {len(feature_cols)} total")
-    print(f"  Top features: {selected_features[:10]}")
-    
-    # 3. Train all models and collect results
-    print("\n3. Training all models...")
-    all_model_results = []
-    
-    # Clear GPU memory before starting
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    
-    # Train and save LSTM results
-    print("\nTraining LSTM model...")
-    lstm_results = train_lstm_on_all(DATA_CONFIG['processed_dir'])
-    
-    # Plot LSTM actual vs estimated
-    if TRAINING_OPTIONS['save_predictions']:
-        print("\nPlotting LSTM actual vs estimated values...")
-        plot_actual_vs_estimated(
-            np.array(lstm_results['r_actual']),
-            np.array(lstm_results['r_pred']),
-            model_name="LSTM"
-        )
-    
-    # Save LSTM model
-    lstm_save_path = f'results/models/lstm_model_{timestamp}_rmse_{lstm_results["rmse"]:.4f}.pth'
-    torch.save({
-        'model_type': 'lstm',
-        'timestamp': timestamp,
-        'rmse': lstm_results['rmse'],
-        'train_loss': lstm_results['train_loss'],
-        'val_loss': lstm_results['val_loss'],
-        'predictions': {
-            'actual': lstm_results['r_actual'],
-            'predicted': lstm_results['r_pred']
-        }
-    }, lstm_save_path)
-    print(f"Saved LSTM model to {lstm_save_path}")
-    
-    # Clear GPU memory after LSTM
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    
-    all_model_results.append({
-        'name': 'lstm',
-        'type': 'RNN',
-        'metrics': {
-            'rmse': lstm_results['rmse']
-        },
-        'predictions': {
-            'y_test': lstm_results['r_actual'],
-            'y_pred': lstm_results['r_pred']
-        } if TRAINING_OPTIONS['save_predictions'] else None,
-        'training_history': {
-            'train_loss': lstm_results['train_loss'],
-            'val_loss': lstm_results['val_loss']
-        } if TRAINING_OPTIONS['plot_training_history'] else None
-    })
-    
-    # Train and save GRU model
-    print("\nTraining GRU model...")
-    gru_results = train_gru_on_all(DATA_CONFIG['processed_dir'])
-    
-    # Plot GRU actual vs estimated
-    if TRAINING_OPTIONS['save_predictions']:
-        print("\nPlotting GRU actual vs estimated values...")
-        plot_actual_vs_estimated(
-            np.array(gru_results['r_actual']),
-            np.array(gru_results['r_pred']),
-            model_name="GRU"
-        )
-    
-    # Save GRU model
-    gru_save_path = f'results/models/gru_model_{timestamp}_rmse_{gru_results["rmse"]:.4f}.pth'
-    torch.save({
-        'model_type': 'gru',
-        'timestamp': timestamp,
-        'rmse': gru_results['rmse'],
-        'train_loss': gru_results['train_loss'],
-        'val_loss': gru_results['val_loss'],
-        'predictions': {
-            'actual': gru_results['r_actual'],
-            'predicted': gru_results['r_pred']
-        }
-    }, gru_save_path)
-    print(f"Saved GRU model to {gru_save_path}")
-    
-    # Clear GPU memory after GRU
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    
-    all_model_results.append({
-        'name': 'gru',
-        'type': 'RNN',
-        'metrics': {
-            'rmse': gru_results['rmse']
-        },
-        'predictions': {
-            'y_test': gru_results['r_actual'],
-            'y_pred': gru_results['r_pred']
-        } if TRAINING_OPTIONS['save_predictions'] else None,
-        'training_history': {
-            'train_loss': gru_results['train_loss'],
-            'val_loss': gru_results['val_loss']
-        } if TRAINING_OPTIONS['plot_training_history'] else None
-    })
-    
-    # Train sklearn models
-    print("\nTraining traditional ML models...")
-    sklearn_results = train_all_models_enhanced(
-        DATA_CONFIG['processed_dir'],
-        include_slow_models=TRAINING_OPTIONS['include_slow_models']
-    )
-    
-    # Save sklearn models and plot actual vs estimated
-    for result in sklearn_results:
-        if result['success']:
-            model_save_path = f'results/models/{result["name"]}_model_{timestamp}_rmse_{result["metrics"]["rmse"]:.4f}.pkl'
-            pd.to_pickle({
-                'model_type': result['name'],
-                'timestamp': timestamp,
-                'metrics': result['metrics'],
-                'predictions': {
-                    'actual': result['y_test'],
-                    'predicted': result['y_pred']
-                }
-            }, model_save_path)
-            print(f"Saved {result['name']} model to {model_save_path}")
-            
-            # Plot actual vs estimated for sklearn models
-            if TRAINING_OPTIONS['save_predictions']:
-                print(f"\nPlotting {result['name']} actual vs estimated values...")
-                plot_actual_vs_estimated(
-                    result['y_test'],
-                    result['y_pred'],
-                    model_name=result['name']
-                )
-            
-            all_model_results.append({
-                'name': result['name'],
-                'type': 'sklearn',
-                'metrics': result['metrics'],
-                'predictions': {
-                    'y_test': result['y_test'],
-                    'y_pred': result['y_pred']
-                } if TRAINING_OPTIONS['save_predictions'] else None
-            })
-    
-    # 4. Create visualization figures
-    if TRAINING_OPTIONS['plot_training_history']:
-        create_analysis_figures(all_model_results, df_all)
-    
-    # 5. Statistical Analysis and Results
-    print("\n Results")
+    print("\n" + "=" * 80)
+    print("📊 RESULTS SUMMARY")
     print("=" * 80)
-    perform_statistical_analysis(all_model_results)
     
-    # 6. Save results
-    if TRAINING_OPTIONS['save_predictions']:
-        save_analysis_results(all_model_results)
+    # Sort by combined RMSE
+    results_sorted = sorted(results, key=lambda x: x['rmse_combined'])
     
-    print("\nAnalysis complete. All models saved in results/models/")
+    print("\n🏆 Model Rankings (by Combined RMSE):")
+    print("-" * 60)
+    print(f"{'Rank':<6} {'Model':<20} {'RMSE-X':<10} {'RMSE-Y':<10} {'Combined':<10} {'Time (s)':<10}")
+    print("-" * 60)
+    
+    for i, result in enumerate(results_sorted, 1):
+        print(f"{i:<6} {result['model']:<20} {result['rmse_x']:<10.2f} {result['rmse_y']:<10.2f} "
+              f"{result['rmse_combined']:<10.2f} {result['train_time']:<10.2f}")
+    
+    # Best model
+    best = results_sorted[0]
+    print(f"\n🥇 Best Model: {best['model']} (Combined RMSE: {best['rmse_combined']:.2f})")
+    
+    # Save results
+    results_df = pd.DataFrame([{
+        'Model': r['model'],
+        'RMSE_X': r['rmse_x'],
+        'RMSE_Y': r['rmse_y'],
+        'RMSE_Combined': r['rmse_combined'],
+        'Training_Time': r['train_time']
+    } for r in results])
+    
+    results_df.to_csv('results/model_comparison.csv', index=False)
+    print(f"\n💾 Results saved to: results/model_comparison.csv")
 
-def create_analysis_figures(model_results, df_raw):
-    # Figure 1: Model Performance Comparison
-    fig1, axes = plt.subplots(
-        1, 2, 
-        figsize=ANALYSIS_CONFIG['visualization']['figure_sizes']['model_comparison']
-    )
-    fig1.suptitle('Model Performance Comparison', fontsize=16)
-    
-    # Sort models by RMSE for better visualization
-    model_results.sort(key=lambda x: x['metrics']['rmse'])
-    
-    # Model Performance Comparison (RMSE)
-    model_names = [r['name'] for r in model_results]
-    rmse_values = [r['metrics']['rmse'] for r in model_results]
-    
-    bars = axes[0].barh(model_names, rmse_values)
-    axes[0].set_xlabel('RMSE')
-    axes[0].set_title('Model Performance by RMSE')
-    axes[0].grid(True, alpha=ANALYSIS_CONFIG['visualization']['grid_alpha'])
-    
-    # Color code bars by model type
-    for i, result in enumerate(model_results):
-        if result['type'] == 'RNN':
-            bars[i].set_color('red')
-        else:
-            bars[i].set_color('blue')
-    
-    # Training History for models that have it
-    axes[1].set_title('Training History')
-    axes[1].set_xlabel('Epoch')
-    axes[1].set_ylabel('Loss')
-    axes[1].grid(True, alpha=ANALYSIS_CONFIG['visualization']['grid_alpha'])
-    axes[1].set_yscale('log')
-    
-    for result in model_results:
-        if result.get('training_history') and result['type'] == 'RNN':
-            if 'train_loss' in result['training_history']:
-                axes[1].plot(
-                    result['training_history']['train_loss'],
-                    label=f"{result['name']} (Train)",
-                    linewidth=2
-                )
-            if 'val_loss' in result['training_history']:
-                axes[1].plot(
-                    result['training_history']['val_loss'],
-                    label=f"{result['name']} (Val)",
-                    linewidth=2,
-                    linestyle='--'
-                )
-    
-    axes[1].legend()
-    plt.tight_layout()
-    plt.show()
 
-def perform_statistical_analysis(model_results):
+def main():
+    """Main execution function"""
+    # Check if running interactively
+    if len(sys.argv) > 1:
+        if sys.argv[1] == '--preprocess':
+            print("Running preprocessing pipeline...")
+            from main_preproccessing import run_complete_pipeline
+            run_complete_pipeline()
+            print("\nPreprocessing complete! Now run without --preprocess to train models.")
+            return
     
-    # Sort results by RMSE for better readability
-    sorted_results = sorted(model_results, key=lambda x: x['metrics']['rmse'])
-    best_rmse = min(r['metrics']['rmse'] for r in model_results)
+    # Train all models
+    results = train_all_models()
     
-    # Individual model results
-    print("\nDetailed Model Results:")
-    print("-" * 40)
-    
-    for result in sorted_results:
-        print(f"\n{result['name']}:")
-        rmse = result['metrics']['rmse']
-        
-        # Calculate mean and std dev from predictions
-        predictions = None
-        if result.get('predictions'):
-            if 'y_pred' in result['predictions']:
-                predictions = result['predictions']['y_pred']
-            elif 'r_pred' in result['predictions']:  # For LSTM results
-                predictions = result['predictions']['r_pred']
-        
-        mean = std_dev = None
-        if predictions is not None and len(predictions) > 0:
-            predictions = np.array(predictions)
-            mean = np.mean(predictions)
-            std_dev = np.std(predictions)
-        
-        print(f"  RMSE: {rmse:.4f}")
-        if mean is not None:
-            print(f"  Mean: {mean:.4f}")
-        if std_dev is not None:
-            print(f"  Std: {std_dev:.4f}")
-        
-        # Show if this was the best model
-        if rmse == best_rmse:
-            print("  → Best performing model")
-
-def save_analysis_results(model_results):
-    """Save analysis results to files"""
-    
-    # Create results directory if it doesn't exist
-    os.makedirs(ANALYSIS_CONFIG['output']['results_dir'], exist_ok=True)
-    
-    # Save detailed report
-    report_path = os.path.join(
-        ANALYSIS_CONFIG['output']['results_dir'], 
-        ANALYSIS_CONFIG['output']['report_file']
-    )
-    
-    with open(report_path, 'w') as f:
-        f.write("POSITION ESTIMATION ANALYSIS REPORT\n")
-        f.write("="*60 + "\n\n")
-        
-        # Sort models by RMSE
-        sorted_results = sorted(model_results, key=lambda x: x['metrics']['rmse'])
-        
-        f.write("Model Performance Summary:\n")
-        f.write("-"*40 + "\n")
-        for result in sorted_results:
-            f.write(f"\nModel: {result['name']} ({result['type']})\n")
-            f.write(f"  RMSE: {result['metrics']['rmse']:.4f}\n")
-            if result['metrics'].get('mae'):
-                f.write(f"  MAE: {result['metrics']['mae']:.4f}\n")
-            if result['metrics'].get('r2'):
-                f.write(f"  R2: {result['metrics']['r2']:.4f}\n")
+    # Print summary
+    if results:
+        print_summary(results)
+        print("\n✅ Analysis complete!")
+    else:
+        print("\n⚠️  No models were trained. Check if features exist or run:")
+        print("    python main.py --preprocess")
 
 
 if __name__ == "__main__":
-    run_analysis()
+    main()

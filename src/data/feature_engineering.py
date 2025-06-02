@@ -96,10 +96,7 @@ class FeatureEngineer:
     def create_temporal_features(self, df):
         """
         Create temporal features based on trajectory sequences
-<<<<<<< HEAD
-=======
         FIXED: Ensures temporal features are computed within each trajectory independently
->>>>>>> main
         
         Parameters:
         -----------
@@ -113,28 +110,6 @@ class FeatureEngineer:
         features_df = df.copy()
         
         # Sort by trajectory and step to ensure correct order
-<<<<<<< HEAD
-        features_df = features_df.sort_values(['trajectory_id', 'step_id'])
-        
-        # Lag features (previous step)
-        for col in ['PL', 'RMS']:
-            features_df[f'{col}_lag1'] = features_df.groupby('trajectory_id')[col].shift(1)
-            features_df[f'{col}_lag2'] = features_df.groupby('trajectory_id')[col].shift(2)
-            
-            # Lead features (next step)
-            features_df[f'{col}_lead1'] = features_df.groupby('trajectory_id')[col].shift(-1)
-            
-            # Rolling statistics
-            features_df[f'{col}_rolling_mean_3'] = features_df.groupby('trajectory_id')[col].rolling(3, center=True, min_periods=1).mean().reset_index(drop=True)
-            features_df[f'{col}_rolling_std_3'] = features_df.groupby('trajectory_id')[col].rolling(3, center=True, min_periods=1).std().reset_index(drop=True)
-            
-            # Differences
-            features_df[f'{col}_diff'] = features_df.groupby('trajectory_id')[col].diff()
-            features_df[f'{col}_diff2'] = features_df.groupby('trajectory_id')[f'{col}_diff'].diff()
-        
-        # Fill NaN values with appropriate methods
-        features_df = features_df.bfill().ffill().fillna(0)
-=======
         features_df = features_df.sort_values(['trajectory_id', 'step_id']).reset_index(drop=True)
         
         # Process each trajectory independently to avoid data leakage
@@ -177,7 +152,6 @@ class FeatureEngineer:
         # Combine all processed trajectories
         features_df = pd.concat(processed_trajectories, ignore_index=True)
         features_df = features_df.sort_values(['trajectory_id', 'step_id']).reset_index(drop=True)
->>>>>>> main
         
         return features_df
     
@@ -240,11 +214,7 @@ class FeatureEngineer:
         features_df = self.create_interaction_features(features_df)
         
         # Create temporal features
-<<<<<<< HEAD
-        features_df = self.create_temporal_features(features_df)
-=======
         #features_df = self.create_temporal_features(features_df)
->>>>>>> main
         
         # Create polynomial features
         features_df = self.create_polynomial_features(features_df, degree=3)

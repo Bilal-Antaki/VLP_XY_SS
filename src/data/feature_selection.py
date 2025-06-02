@@ -61,10 +61,7 @@ class FeatureSelector:
     def prepare_data(self, df):
         """
         Prepare data for feature selection
-<<<<<<< HEAD
-=======
         FIXED: Ensures we work with properly structured trajectory data
->>>>>>> main
         
         Parameters:
         -----------
@@ -75,13 +72,10 @@ class FeatureSelector:
         --------
         tuple : (X, y, feature_names)
         """
-<<<<<<< HEAD
-=======
         # Verify trajectory structure exists
         if 'trajectory_id' not in df.columns or 'step_id' not in df.columns:
             raise ValueError("Data must contain trajectory_id and step_id columns")
         
->>>>>>> main
         # Identify feature columns (exclude targets and metadata)
         exclude_cols = self.target_cols + ['r', 'trajectory_id', 'step_id']
         feature_cols = [col for col in df.columns if col not in exclude_cols]
@@ -89,9 +83,6 @@ class FeatureSelector:
         # Remove any remaining NaN or infinite values
         df_clean = df.copy()
         df_clean[feature_cols] = df_clean[feature_cols].replace([np.inf, -np.inf], np.nan)
-<<<<<<< HEAD
-        df_clean[feature_cols] = df_clean[feature_cols].fillna(0)
-=======
         
         # Fill NaN values within each trajectory independently
         for traj_id in df_clean['trajectory_id'].unique():
@@ -99,7 +90,6 @@ class FeatureSelector:
             traj_data = df_clean.loc[traj_mask, feature_cols]
             # Fill with trajectory-specific means, then 0 for any remaining NaN
             df_clean.loc[traj_mask, feature_cols] = traj_data.fillna(traj_data.mean()).fillna(0)
->>>>>>> main
         
         # Extract features and targets
         X = df_clean[feature_cols].values
@@ -107,10 +97,7 @@ class FeatureSelector:
         
         print(f"\nFeature matrix shape: {X.shape}")
         print(f"Target matrix shape: {y.shape}")
-<<<<<<< HEAD
-=======
         print(f"Number of trajectories: {df_clean['trajectory_id'].nunique()}")
->>>>>>> main
         
         return X, y, feature_cols
     
@@ -375,11 +362,7 @@ class FeatureSelector:
             print(f"{i:2d}. {feature}")
 
 
-<<<<<<< HEAD
-def main(method='lasso'):
-=======
 def main(method='random_forest'):
->>>>>>> main
     """
     Main function to perform feature selection
     
@@ -394,13 +377,9 @@ def main(method='random_forest'):
     # Perform feature selection
     selected_features = selector.select_features()
     
-<<<<<<< HEAD
     return selected_features
 
 
 if __name__ == "__main__":
     # You can change this to 'random_forest' if you prefer
-    selected_features = main(method='lasso')
-=======
-    return selected_features
->>>>>>> main
+    selected_features = main(method='random_forest')
