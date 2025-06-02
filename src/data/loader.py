@@ -5,7 +5,6 @@ Loads the FCPR-D1_CIR.csv file containing x, y, PL, and RMS values
 
 import pandas as pd
 import numpy as np
-import os
 from pathlib import Path
 
 
@@ -19,7 +18,6 @@ class TrajectoryDataLoader:
         data_path : str
             Relative path to the CSV file
         """
-        # Convert to relative path and handle different OS path separators
         self.data_path = Path(data_path)
         
     def load_data(self):
@@ -31,7 +29,6 @@ class TrajectoryDataLoader:
         pd.DataFrame : DataFrame containing the loaded data
         """
         try:
-            # Read the CSV file
             df = pd.read_csv(self.data_path)
             
             # Verify required columns exist
@@ -51,47 +48,25 @@ class TrajectoryDataLoader:
             raise FileNotFoundError(f"Data file not found at {self.data_path}")
         except Exception as e:
             raise Exception(f"Error loading data: {str(e)}")
+
+
+def load_cir_data(data_path='data/processed/FCPR-D1_CIR.csv', **kwargs):
+    """
+    Simple function to load CIR data
     
-    def split_trajectories(self, df, trajectories_per_set=10, train_trajectories=16):
-        """
-        Split data into trajectories and then into train/validation sets
+    Parameters:
+    -----------
+    data_path : str
+        Path to the CSV file
+    **kwargs : dict
+        Additional arguments (kept for compatibility)
         
-        Parameters:
-        -----------
-        df : pd.DataFrame
-            The loaded data
-        trajectories_per_set : int
-            Number of points per trajectory (default: 10)
-        train_trajectories : int
-            Number of trajectories for training (default: 16)
-            
-        Returns:
-        --------
-        tuple : (train_df, val_df, train_indices, val_indices)
-        """
-        total_points = len(df)
-        total_trajectories = total_points // trajectories_per_set
-        
-        if total_points % trajectories_per_set != 0:
-            print(f"Warning: Total points ({total_points}) not divisible by trajectory length ({trajectories_per_set})")
-        
-        # Create trajectory indices
-        df['trajectory_id'] = np.repeat(range(total_trajectories), trajectories_per_set)[:total_points]
-        df['step_id'] = np.tile(range(trajectories_per_set), total_trajectories)[:total_points]
-        
-        # Split into train and validation trajectories
-        train_traj_ids = list(range(train_trajectories))
-        val_traj_ids = list(range(train_trajectories, total_trajectories))
-        
-        train_df = df[df['trajectory_id'].isin(train_traj_ids)].copy()
-        val_df = df[df['trajectory_id'].isin(val_traj_ids)].copy()
-        
-        print(f"\nTrajectory split:")
-        print(f"Total trajectories: {total_trajectories}")
-        print(f"Training trajectories: {len(train_traj_ids)} ({len(train_df)} points)")
-        print(f"Validation trajectories: {len(val_traj_ids)} ({len(val_df)} points)")
-        
-        return train_df, val_df, train_traj_ids, val_traj_ids
+    Returns:
+    --------
+    pd.DataFrame : Loaded data
+    """
+    loader = TrajectoryDataLoader(data_path)
+    return loader.load_data()
 
 
 def main():
@@ -108,11 +83,12 @@ def main():
     print("\nData statistics:")
     print(df[['X', 'Y', 'PL', 'RMS']].describe())
     
-    # Split into trajectories
-    train_df, val_df, train_ids, val_ids = loader.split_trajectories(df)
+    print(f"\nTotal data points: {len(df)}")
+    print(f"First 160 points will be used for training")
+    print(f"Last 40 points will be used for validation")
     
-    return df, train_df, val_df
+    return df
 
 
 if __name__ == "__main__":
-    df, train_df, val_df = main()
+    df = main()
