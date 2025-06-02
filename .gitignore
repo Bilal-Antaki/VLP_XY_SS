@@ -33,7 +33,6 @@ htmlcov/
 # Project specific
 results/
 *.log
-*.csv
 *.pkl
 *.h5
 *.pt
