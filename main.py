@@ -1,6 +1,6 @@
 from src.data.feature_engineering import create_engineered_features, select_features
 from src.config import DATA_CONFIG, ANALYSIS_CONFIG, TRAINING_OPTIONS
-from src.training.train_sklearn import train_all_models_enhanced
+from src.training.train_linear import train_all_models_enhanced
 from src.training.train_lstm import train_lstm_on_all
 from src.training.train_gru import train_gru_on_all
 from src.data.loader import load_cir_data
