@@ -16,8 +16,31 @@ TRAINING_CONFIG = {
     'epochs': 250,
     'weight_decay': 1e-5,
     'random_seed': 42,
-    'train_size': 160,     # First 160 points for training
-    'val_size': 40         # Last 40 points for validation
+    'train_size': 160,
+    'val_size': 40
+}
+
+# SVR Model Configuration
+SVR_CONFIG = {
+    'kernel': 'rbf',  # 'linear', 'poly', 'rbf', 'sigmoid'
+    'C': 1.0,         # Regularization parameter
+    'epsilon': 0.1,   # Epsilon-tube width
+    'gamma': 'scale'  # Kernel coefficient for 'rbf', 'poly' and 'sigmoid'
+}
+
+# Random Forest Configuration
+RF_CONFIG = {
+    'n_estimators': 100,
+    'max_depth': None,
+    'random_state': 42
+}
+
+# XGBoost Configuration
+XGB_CONFIG = {
+    'n_estimators': 100,
+    'max_depth': 6,
+    'learning_rate': 0.1,
+    'random_state': 42
 }
 
 # Feature Engineering Configuration
@@ -63,7 +86,7 @@ ANALYSIS_CONFIG = {
 
 # Model Training Options
 TRAINING_OPTIONS = {
-    'include_slow_models': True,  # Whether to include computationally intensive models
-    'save_predictions': True,      # Whether to save model predictions
-    'plot_training_history': True  # Whether to plot training history for applicable models
+    'include_slow_models': True,
+    'save_predictions': True,
+    'plot_training_history': True
 }

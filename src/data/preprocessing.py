@@ -1,242 +1,166 @@
 """
-Improved preprocessing for trajectory prediction
-Handles sequences properly without data leakage
+Preprocessing for single sequence trajectory prediction
 """
 
 import pandas as pd
 import numpy as np
-import os
-from sklearn.preprocessing import StandardScaler
-
-# Get the absolute path of the script
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-# Get the project root directory (2 levels up from script)
-PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+from sklearn.preprocessing import StandardScaler, RobustScaler
 
 
-def load_and_preprocess_data(feature_file_path, train_trajectories=16, approach='full_trajectory'):
+def load_and_preprocess_data(feature_file_path, train_size=160):
     """
-    Load and preprocess trajectory data with multiple approach options
+    Load and preprocess single sequence trajectory data
     
     Parameters:
     -----------
     feature_file_path : str
         Path to the CSV file containing features
-    train_trajectories : int
-        Number of trajectories to use for training (default: 16 out of 20)
-    approach : str
-        'full_trajectory': Use complete 10-step trajectories
-        'next_step': Predict next step given history
-        'sliding_window': Create sequences with sliding window (non-overlapping between train/val)
+    train_size : int
+        Number of points to use for training (default: 160)
         
     Returns:
     --------
-    dict containing different data formats based on approach
+    tuple: (X_train, Y_train, X_val, Y_val)
     """
     print(f"\nLoading data from: {feature_file_path}")
-    print(f"Preprocessing approach: {approach}")
     
     # Load feature data
-    try:
-        df = pd.read_csv(feature_file_path)
-    except Exception as e:
-        raise Exception(f"Error loading data: {str(e)}")
-    
+    df = pd.read_csv(feature_file_path)
     print(f"Total records: {len(df)}")
-    
-    # Sort by trajectory and step
-    df = df.sort_values(by=["trajectory_id", "step_id"]).reset_index(drop=True)
     
     # Feature columns (exclude x, y, trajectory_id, step_id)
     feature_cols = [col for col in df.columns if col not in ["X", "Y", "trajectory_id", "step_id"]]
     print(f"Features used: {feature_cols}")
     
-    # Get unique trajectories
-    trajectory_ids = sorted(df["trajectory_id"].unique())
-    n_trajectories = len(trajectory_ids)
-    print(f"Number of trajectories: {n_trajectories}")
+    # Split into train and validation
+    X_train = df.iloc[:train_size][feature_cols].values
+    Y_train = df.iloc[:train_size][["X", "Y"]].values
     
-    # Split trajectories into train and validation
-    train_traj_ids = trajectory_ids[:train_trajectories]
-    val_traj_ids = trajectory_ids[train_trajectories:]
+    X_val = df.iloc[train_size:][feature_cols].values
+    Y_val = df.iloc[train_size:][["X", "Y"]].values
     
-    print(f"Training trajectories: {len(train_traj_ids)}")
-    print(f"Validation trajectories: {len(val_traj_ids)}")
-    
-    if approach == 'full_trajectory':
-        return preprocess_full_trajectory(df, feature_cols, train_traj_ids, val_traj_ids)
-    elif approach == 'next_step':
-        return preprocess_next_step(df, feature_cols, train_traj_ids, val_traj_ids)
-    elif approach == 'sliding_window':
-        return preprocess_sliding_window(df, feature_cols, train_traj_ids, val_traj_ids, window_size=5)
-    else:
-        raise ValueError(f"Unknown approach: {approach}")
-
-
-def preprocess_full_trajectory(df, feature_cols, train_traj_ids, val_traj_ids):
-    """
-    Use complete trajectories as sequences
-    """
-    X_train, Y_train = [], []
-    X_val, Y_val = [], []
-    
-    # Process training trajectories
-    for traj_id in train_traj_ids:
-        traj_data = df[df["trajectory_id"] == traj_id].sort_values("step_id")
-        if len(traj_data) == 10:  # Ensure complete trajectory
-            X_train.append(traj_data[feature_cols].values)
-            Y_train.append(traj_data[["X", "Y"]].values)
-    
-    # Process validation trajectories
-    for traj_id in val_traj_ids:
-        traj_data = df[df["trajectory_id"] == traj_id].sort_values("step_id")
-        if len(traj_data) == 10:  # Ensure complete trajectory
-            X_val.append(traj_data[feature_cols].values)
-            Y_val.append(traj_data[["X", "Y"]].values)
-    
-    X_train = np.array(X_train)
-    Y_train = np.array(Y_train)
-    X_val = np.array(X_val)
-    Y_val = np.array(Y_val)
-    
-    print(f"\nFull trajectory approach:")
-    print(f"Training: {X_train.shape}")
-    print(f"Validation: {X_val.shape}")
+    print(f"Training set: {X_train.shape}")
+    print(f"Validation set: {X_val.shape}")
     
     return X_train, Y_train, X_val, Y_val
 
 
-def preprocess_next_step(df, feature_cols, train_traj_ids, val_traj_ids, history_len=3):
+def scale_features(X_train, Y_train, X_val, Y_val):
     """
-    Predict next position given history of previous positions
-    """
-    X_train, Y_train = [], []
-    X_val, Y_val = [], []
+    Scale features and targets using RobustScaler
     
-    # Process training trajectories
-    for traj_id in train_traj_ids:
-        traj_data = df[df["trajectory_id"] == traj_id].sort_values("step_id")
+    Parameters:
+    -----------
+    X_train, Y_train : arrays
+        Training features and targets
+    X_val, Y_val : arrays
+        Validation features and targets
         
-        # Create sequences for next-step prediction
-        for i in range(history_len, len(traj_data)):
-            # Use history_len previous steps to predict current step
-            X_seq = traj_data[feature_cols].iloc[i-history_len:i].values
-            Y_target = traj_data[["X", "Y"]].iloc[i].values
-            
-            X_train.append(X_seq)
-            Y_train.append(Y_target)
+    Returns:
+    --------
+    tuple: (X_train_scaled, Y_train_scaled, X_val_scaled, Y_val_scaled, scaler_X, scaler_Y)
+    """
+    # Initialize scalers
+    scaler_X = RobustScaler()
+    scaler_Y = RobustScaler()
     
-    # Process validation trajectories
-    for traj_id in val_traj_ids:
-        traj_data = df[df["trajectory_id"] == traj_id].sort_values("step_id")
+    # Fit and transform training data
+    X_train_scaled = scaler_X.fit_transform(X_train)
+    Y_train_scaled = scaler_Y.fit_transform(Y_train)
+    
+    # Transform validation data
+    X_val_scaled = scaler_X.transform(X_val)
+    Y_val_scaled = scaler_Y.transform(Y_val)
+    
+    return X_train_scaled, Y_train_scaled, X_val_scaled, Y_val_scaled, scaler_X, scaler_Y
+
+
+def create_sequences(X, Y, seq_len=10):
+    """
+    Create overlapping sequences for LSTM training
+    
+    Parameters:
+    -----------
+    X : array
+        Features
+    Y : array
+        Targets
+    seq_len : int
+        Sequence length
         
-        for i in range(history_len, len(traj_data)):
-            X_seq = traj_data[feature_cols].iloc[i-history_len:i].values
-            Y_target = traj_data[["X", "Y"]].iloc[i].values
-            
-            X_val.append(X_seq)
-            Y_val.append(Y_target)
+    Returns:
+    --------
+    tuple: (X_sequences, Y_sequences)
+    """
+    X_sequences = []
+    Y_sequences = []
     
-    X_train = np.array(X_train)
-    Y_train = np.array(Y_train)
-    X_val = np.array(X_val)
-    Y_val = np.array(Y_val)
+    for i in range(len(X) - seq_len):
+        X_sequences.append(X[i:i+seq_len])
+        Y_sequences.append(Y[i+1:i+seq_len+1])
     
-    print(f"\nNext-step prediction approach:")
-    print(f"Training: X={X_train.shape}, Y={Y_train.shape}")
-    print(f"Validation: X={X_val.shape}, Y={Y_val.shape}")
-    
-    return X_train, Y_train, X_val, Y_val
+    return np.array(X_sequences), np.array(Y_sequences)
 
 
-def preprocess_sliding_window(df, feature_cols, train_traj_ids, val_traj_ids, window_size=5):
+def prepare_lstm_data(df, train_size=160, seq_len=10):
     """
-    Create non-overlapping sequences within trajectories
-    """
-    X_train, Y_train = [], []
-    X_val, Y_val = [], []
+    Prepare data specifically for LSTM model
     
-    # Process training trajectories
-    for traj_id in train_traj_ids:
-        traj_data = df[df["trajectory_id"] == traj_id].sort_values("step_id")
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        Input dataframe
+    train_size : int
+        Number of training points
+    seq_len : int
+        Sequence length for LSTM
         
-        # Create non-overlapping windows
-        for i in range(0, len(traj_data) - window_size + 1, window_size//2):
-            X_seq = traj_data[feature_cols].iloc[i:i+window_size].values
-            Y_seq = traj_data[["X", "Y"]].iloc[i:i+window_size].values
-            
-            if len(X_seq) == window_size:  # Ensure complete window
-                X_train.append(X_seq)
-                Y_train.append(Y_seq)
+    Returns:
+    --------
+    dict with prepared data
+    """
+    # Get feature columns
+    feature_cols = [col for col in df.columns if col not in ["X", "Y", "trajectory_id", "step_id"]]
     
-    # Process validation trajectories
-    for traj_id in val_traj_ids:
-        traj_data = df[df["trajectory_id"] == traj_id].sort_values("step_id")
-        
-        for i in range(0, len(traj_data) - window_size + 1, window_size//2):
-            X_seq = traj_data[feature_cols].iloc[i:i+window_size].values
-            Y_seq = traj_data[["X", "Y"]].iloc[i:i+window_size].values
-            
-            if len(X_seq) == window_size:
-                X_val.append(X_seq)
-                Y_val.append(Y_seq)
+    # Split data
+    train_df = df.iloc[:train_size]
+    val_df = df.iloc[train_size:]
     
-    X_train = np.array(X_train)
-    Y_train = np.array(Y_train)
-    X_val = np.array(X_val)
-    Y_val = np.array(Y_val)
+    # Create sequences from training data
+    X_train = train_df[feature_cols].values
+    Y_train = train_df[["X", "Y"]].values
     
-    print(f"\nSliding window approach (window_size={window_size}):")
-    print(f"Training: {X_train.shape}")
-    print(f"Validation: {X_val.shape}")
+    X_sequences, Y_sequences = create_sequences(X_train, Y_train, seq_len)
     
-    return X_train, Y_train, X_val, Y_val
+    # Validation data (last 40 points)
+    Y_val = val_df[["X", "Y"]].values
+    
+    return {
+        'X_sequences': X_sequences,
+        'Y_sequences': Y_sequences,
+        'Y_val': Y_val,
+        'feature_cols': feature_cols,
+        'train_df': train_df,
+        'val_df': val_df
+    }
 
 
-def create_lagged_features(df, feature_cols, n_lags=2):
-    """
-    Create lagged features for better temporal modeling
-    """
-    df_lagged = df.copy()
+def main():
+    """Example usage"""
+    # Load and preprocess data
+    X_train, Y_train, X_val, Y_val = load_and_preprocess_data('data/features/features_selected.csv')
     
-    # Create lagged features
-    for lag in range(1, n_lags + 1):
-        for col in ['X', 'Y']:
-            df_lagged[f'{col}_lag{lag}'] = df_lagged.groupby('trajectory_id')[col].shift(lag)
+    # Scale data
+    X_train_scaled, Y_train_scaled, X_val_scaled, Y_val_scaled, scaler_X, scaler_Y = scale_features(
+        X_train, Y_train, X_val, Y_val
+    )
     
-    # Drop rows with NaN values from lagging
-    df_lagged = df_lagged.groupby('trajectory_id').apply(
-        lambda x: x.iloc[n_lags:] if len(x) > n_lags else x.iloc[0:0]
-    ).reset_index(drop=True)
+    print("\nPreprocessing complete!")
+    print(f"Scaled training features: {X_train_scaled.shape}")
+    print(f"Scaled validation features: {X_val_scaled.shape}")
     
-    return df_lagged
+    return X_train_scaled, Y_train_scaled, X_val_scaled, Y_val_scaled
 
 
-def normalize_by_trajectory(X_train, Y_train, X_val, Y_val):
-    """
-    Normalize features with trajectory-aware scaling
-    """
-    # Flatten for normalization but keep track of shapes
-    train_shape = X_train.shape
-    val_shape = X_val.shape
-    
-    # Normalize features
-    feature_scaler = StandardScaler()
-    X_train_flat = X_train.reshape(-1, X_train.shape[-1])
-    X_val_flat = X_val.reshape(-1, X_val.shape[-1])
-    
-    X_train_scaled = feature_scaler.fit_transform(X_train_flat).reshape(train_shape)
-    X_val_scaled = feature_scaler.transform(X_val_flat).reshape(val_shape)
-    
-    # Normalize targets
-    target_scaler = StandardScaler()
-    if Y_train.ndim == 3:  # Full sequences
-        Y_train_flat = Y_train.reshape(-1, Y_train.shape[-1])
-        Y_val_flat = Y_val.reshape(-1, Y_val.shape[-1])
-        Y_train_scaled = target_scaler.fit_transform(Y_train_flat).reshape(Y_train.shape)
-        Y_val_scaled = target_scaler.transform(Y_val_flat).reshape(Y_val.shape)
-    else:  # Single targets
-        Y_train_scaled = target_scaler.fit_transform(Y_train)
-        Y_val_scaled = target_scaler.transform(Y_val)
-    
-    return (X_train_scaled, Y_train_scaled, X_val_scaled, Y_val_scaled), (feature_scaler, target_scaler)
+if __name__ == "__main__":
+    main()

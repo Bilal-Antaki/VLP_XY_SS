@@ -61,7 +61,6 @@ class FeatureSelector:
     def prepare_data(self, df):
         """
         Prepare data for feature selection
-        FIXED: Ensures we work with properly structured trajectory data
         
         Parameters:
         -----------
@@ -72,24 +71,14 @@ class FeatureSelector:
         --------
         tuple : (X, y, feature_names)
         """
-        # Verify trajectory structure exists
-        if 'trajectory_id' not in df.columns or 'step_id' not in df.columns:
-            raise ValueError("Data must contain trajectory_id and step_id columns")
-        
-        # Identify feature columns (exclude targets and metadata)
+        # Identify feature columns (exclude targets and any ID columns)
         exclude_cols = self.target_cols + ['r', 'trajectory_id', 'step_id']
         feature_cols = [col for col in df.columns if col not in exclude_cols]
         
         # Remove any remaining NaN or infinite values
         df_clean = df.copy()
         df_clean[feature_cols] = df_clean[feature_cols].replace([np.inf, -np.inf], np.nan)
-        
-        # Fill NaN values within each trajectory independently
-        for traj_id in df_clean['trajectory_id'].unique():
-            traj_mask = df_clean['trajectory_id'] == traj_id
-            traj_data = df_clean.loc[traj_mask, feature_cols]
-            # Fill with trajectory-specific means, then 0 for any remaining NaN
-            df_clean.loc[traj_mask, feature_cols] = traj_data.fillna(traj_data.mean()).fillna(0)
+        df_clean[feature_cols] = df_clean[feature_cols].fillna(df_clean[feature_cols].mean()).fillna(0)
         
         # Extract features and targets
         X = df_clean[feature_cols].values
@@ -97,7 +86,6 @@ class FeatureSelector:
         
         print(f"\nFeature matrix shape: {X.shape}")
         print(f"Target matrix shape: {y.shape}")
-        print(f"Number of trajectories: {df_clean['trajectory_id'].nunique()}")
         
         return X, y, feature_cols
     
@@ -335,8 +323,13 @@ class FeatureSelector:
         selected_features : list
             List of selected feature names
         """
-        # Include targets and metadata in the output
-        output_cols = self.target_cols + ['trajectory_id', 'step_id'] + selected_features
+        # Include targets in the output
+        output_cols = self.target_cols + selected_features
+        
+        # Add any ID columns if they exist
+        for col in ['trajectory_id', 'step_id']:
+            if col in df.columns and col not in output_cols:
+                output_cols.append(col)
         
         # Ensure all columns exist
         output_cols = [col for col in output_cols if col in df.columns]
@@ -381,5 +374,5 @@ def main(method='random_forest'):
 
 
 if __name__ == "__main__":
-    # You can change this to 'random_forest' if you prefer
+    # You can change this to 'lasso' if you prefer
     selected_features = main(method='random_forest')

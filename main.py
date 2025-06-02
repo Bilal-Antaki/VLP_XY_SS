@@ -45,7 +45,7 @@ def train_all_models():
         ('Linear', train_linear),
         ('SVR', train_svr),
         ('Random Forest', train_rf),
-        ('XGBoost', train_xgb)
+        ('XGBoost', train_xgb),
         ('LSTM', train_lstm)
     ]
     
@@ -144,7 +144,7 @@ def main():
     if len(sys.argv) > 1:
         if sys.argv[1] == '--preprocess':
             print("Running preprocessing pipeline...")
-            from main_preproccessing import run_complete_pipeline
+            from main_preprocessing import run_complete_pipeline
             run_complete_pipeline()
             print("\nPreprocessing complete! Now run without --preprocess to train models.")
             return
