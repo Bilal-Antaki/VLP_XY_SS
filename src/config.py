@@ -9,6 +9,7 @@ MODEL_CONFIG = {
     'dropout': 0.3,
 }
 
+<<<<<<< HEAD
 
 # GRU Model Configuration
 GRU_CONFIG = {
@@ -20,6 +21,38 @@ GRU_CONFIG = {
     'attention_dim': 64,      # Dimension for attention layer if used
 }
 
+=======
+# SVR Model Configuration
+SVR_CONFIG = {
+    'kernel': 'rbf',  # 'linear', 'poly', 'rbf', 'sigmoid'
+    'C': 1.0,         # Regularization parameter
+    'epsilon': 0.1,   # Epsilon-tube width
+    'gamma': 'scale'  # Kernel coefficient for 'rbf', 'poly' and 'sigmoid'
+}
+
+# Random Forest Configuration
+RF_CONFIG = {
+    'n_estimators': 100,
+    'max_depth': None,
+    'random_state': 42
+}
+
+# XGBoost Configuration
+XGB_CONFIG = {
+    'n_estimators': 100,
+    'max_depth': 6,
+    'learning_rate': 0.1,
+    'random_state': 42
+}
+
+# MLP Configuration
+MLP_CONFIG = {
+    'hidden_sizes': [128, 64, 32],  # Architecture: input -> 128 -> 64 -> 32 -> output
+    'dropout': 0.3,
+    'learning_rate': 0.005,
+    'epochs': 800
+}
+>>>>>>> main
 
 # Training Configuration
 TRAINING_CONFIG = {
