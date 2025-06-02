@@ -15,11 +15,7 @@ from src.data.feature_engineering import main as run_feature_engineering
 from src.data.preprocessing import load_and_preprocess_data
 
 # Create a wrapper to run the complete pipeline
-<<<<<<< HEAD
 def run_complete_pipeline(selection_method='lasso'):
-=======
-def run_complete_pipeline(selection_method='random_forest'):
->>>>>>> main
     """
     Run the complete feature engineering and selection pipeline
     
