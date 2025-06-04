@@ -4,9 +4,10 @@ Visualization utilities for model results
 
 import matplotlib.pyplot as plt
 import numpy as np
+from pathlib import Path
 
 
-def plot_actual_vs_estimated(y_true, y_pred, model_name="Model"):
+def plot_actual_vs_estimated(y_true, y_pred, model_name="Model", save_path=None):
     """
     Create a scatter plot of actual vs estimated values
     
@@ -14,6 +15,7 @@ def plot_actual_vs_estimated(y_true, y_pred, model_name="Model"):
         y_true: Array of actual values
         y_pred: Array of predicted values
         model_name: Name of the model for the plot title
+        save_path: Path to save the plot (if None, plot is shown)
     """
     plt.figure(figsize=(10, 8))
     
@@ -39,7 +41,12 @@ def plot_actual_vs_estimated(y_true, y_pred, model_name="Model"):
     plt.axis('equal')
     
     plt.tight_layout()
-    plt.show()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()
     
     return rmse
 
@@ -96,15 +103,20 @@ def plot_training_history(train_loss, val_loss, model_name="Model"):
     plt.show()
 
 
-def plot_xy_predictions(Y_true, Y_pred, model_name="Model"):
+def plot_xy_predictions(Y_true, Y_pred, model_name="Model", save_dir="results/plots"):
     """
-    Plot X and Y coordinate predictions separately
+    Plot X and Y coordinate predictions separately and save to file
     
     Args:
         Y_true: Array of shape (n, 2) with true X,Y values
         Y_pred: Array of shape (n, 2) with predicted X,Y values
         model_name: Name of the model
+        save_dir: Directory to save the plots
     """
+    # Create save directory if it doesn't exist
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
     
     # X coordinate
@@ -135,18 +147,29 @@ def plot_xy_predictions(Y_true, Y_pred, model_name="Model"):
     
     plt.suptitle(f"{model_name}: Coordinate Predictions")
     plt.tight_layout()
-    plt.show()
+    
+    # Save the plot
+    save_path = save_dir / f"{model_name.lower().replace(' ', '_')}_predictions.png"
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Saved predictions plot to: {save_path}")
     
     return rmse_x, rmse_y
 
 
-def plot_model_comparison(results):
+def plot_model_comparison(results, save_dir="results/plots"):
     """
-    Create a bar plot comparing model performances
+    Create a bar plot comparing model performances and save to file
     
     Args:
         results: List of dicts with 'model', 'rmse_x', 'rmse_y', 'rmse_combined'
+        save_dir: Directory to save the plot
     """
+    # Create save directory if it doesn't exist
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
     plt.figure(figsize=(12, 8))
     
     models = [r['model'] for r in results]
@@ -169,4 +192,10 @@ def plot_model_comparison(results):
     plt.grid(True, alpha=0.3, axis='y')
     
     plt.tight_layout()
-    plt.show()
+    
+    # Save the plot
+    save_path = save_dir / "model_comparison.png"
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Saved model comparison plot to: {save_path}")

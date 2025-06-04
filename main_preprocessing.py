@@ -14,14 +14,9 @@ from src.data.feature_engineering import FeatureEngineer
 from src.data.feature_selection import FeatureSelector
 from src.data.loader import load_cir_data
 
-def run_complete_pipeline(selection_method='random_forest'):
+def run_complete_pipeline():
     """
     Run the complete feature engineering and selection pipeline
-    
-    Parameters:
-    -----------
-    selection_method : str
-        Feature selection method - 'lasso' or 'random_forest'
     """
     print("="*60)
     print("POSITION ESTIMATION - FEATURE ENGINEERING PIPELINE")
@@ -47,10 +42,10 @@ def run_complete_pipeline(selection_method='random_forest'):
     
     # Step 3: Select best features
     print("\n\nStep 3: Selecting best features...")
-    print(f"Method: {selection_method.upper()}")
+    print("Method: LASSO")
     print("-"*40)
     
-    selector = FeatureSelector(target_cols=['X', 'Y'], n_features=7, method=selection_method)
+    selector = FeatureSelector(target_cols=['X', 'Y'], n_features=7)
     selected_features = selector.select_features()
     
     # Step 4: Summary
@@ -64,14 +59,12 @@ def run_complete_pipeline(selection_method='random_forest'):
     print(f"  - Total points: {len(df)}")
     print(f"  - First 160 points: Training data")
     print(f"  - Last 40 points: Validation data")
-    print(f"\nSelected features include mandatory PL and RMS plus top 5 from {selection_method}")
+    print(f"\nSelected features include mandatory PL and RMS plus top 5 from LASSO")
     
     return features_df, selected_features
 
 
 if __name__ == "__main__":
-    METHOD = 'random_forest'  # 'lasso' or 'random_forest'
-    
     # Run the complete pipeline
-    features_df, selected_features = run_complete_pipeline(selection_method=METHOD)
+    features_df, selected_features = run_complete_pipeline()
     print(f"\nReady to train models on {len(features_df)} points!")

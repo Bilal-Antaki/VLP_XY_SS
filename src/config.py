@@ -35,14 +35,6 @@ RF_CONFIG = {
     'random_state': 42
 }
 
-# XGBoost Configuration
-XGB_CONFIG = {
-    'n_estimators': 100,
-    'max_depth': 6,
-    'learning_rate': 0.1,
-    'random_state': 42
-}
-
 # Feature Engineering Configuration
 FEATURE_CONFIG = {
     'correlation_threshold': 0.1,
