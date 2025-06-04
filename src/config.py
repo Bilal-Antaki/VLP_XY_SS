@@ -4,16 +4,16 @@ Configuration settings for the Position Estimation project
 
 # LSTM Model Configuration
 MODEL_CONFIG = {
-    'hidden_dim': 128,
+    'hidden_dim': 64,
     'num_layers': 3,
     'dropout': 0.3,
 }
 
 # Training Configuration
 TRAINING_CONFIG = {
-    'learning_rate': 0.001,
+    'learning_rate': 0.005,
     'batch_size': 1,
-    'epochs': 250,
+    'epochs': 1000,
     'weight_decay': 1e-5,
     'random_seed': 42,
     'train_size': 160,

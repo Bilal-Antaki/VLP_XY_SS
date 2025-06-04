@@ -6,7 +6,7 @@ import pandas as pd
 import random
 import os
 from pathlib import Path
-from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error
 import sys
 
@@ -36,34 +36,28 @@ def train_model():
     
     # Get features
     feature_cols = [col for col in df.columns if col not in ['X', 'Y', 'trajectory_id', 'step_id']]
+    print(f"Using {len(feature_cols)} features: {feature_cols}")
     
-    # Create sliding windows from first 160 points
-    X_sequences = []
-    Y_sequences = []
+    # Prepare data: first 160 points for training, last 40 for validation
+    X_train = df.iloc[:160][feature_cols].values  # (160, 7)
+    Y_train = df.iloc[:160][['X', 'Y']].values   # (160, 2)
     
-    window_size = 10
-    for i in range(160 - window_size):
-        X_sequences.append(df.iloc[i:i+window_size][feature_cols].values)
-        Y_sequences.append(df.iloc[i+1:i+window_size+1][['X', 'Y']].values)
+    X_val = df.iloc[160:][feature_cols].values   # (40, 7)
+    Y_val = df.iloc[160:][['X', 'Y']].values     # (40, 2)
     
-    X_train = np.array(X_sequences)
-    Y_train = np.array(Y_sequences)
+    # Scale features and targets
+    scaler_X = StandardScaler()
+    scaler_Y = StandardScaler()
     
-    # Validation: last 40 points
-    Y_val = df.iloc[160:][['X', 'Y']].values
+    X_train_scaled = scaler_X.fit_transform(X_train)
+    Y_train_scaled = scaler_Y.fit_transform(Y_train)
     
-    # Scale
-    scaler_X = RobustScaler()
-    scaler_Y = RobustScaler()
+    # Create sequences: we'll use the full 160 points as one sequence
+    # Add batch dimension: (1, 160, 7) and (1, 160, 2)
+    X_train_seq = torch.FloatTensor(X_train_scaled).unsqueeze(0)
+    Y_train_seq = torch.FloatTensor(Y_train_scaled).unsqueeze(0)
     
-    X_train_scaled = scaler_X.fit_transform(X_train.reshape(-1, X_train.shape[-1])).reshape(X_train.shape)
-    Y_train_scaled = scaler_Y.fit_transform(Y_train.reshape(-1, Y_train.shape[-1])).reshape(Y_train.shape)
-    
-    # Convert to tensors
-    X_train_tensor = torch.FloatTensor(X_train_scaled)
-    Y_train_tensor = torch.FloatTensor(Y_train_scaled)
-    
-    # Model
+    # Initialize model
     model = TrajectoryLSTM(
         input_size=len(feature_cols),
         hidden_size=MODEL_CONFIG['hidden_dim'],
@@ -72,47 +66,57 @@ def train_model():
         dropout=MODEL_CONFIG['dropout']
     )
     
-    # Train
+    # Training
     criterion = nn.MSELoss()
     optimizer = optim.AdamW(model.parameters(), lr=TRAINING_CONFIG['learning_rate'])
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=20)
+    
+    best_loss = float('inf')
     
     for epoch in range(TRAINING_CONFIG['epochs']):
         model.train()
         optimizer.zero_grad()
-        outputs = model(X_train_tensor)
-        loss = criterion(outputs, Y_train_tensor)
+        
+        # Forward pass
+        outputs = model(X_train_seq)  # (1, 160, 2)
+        loss = criterion(outputs, Y_train_seq)
+        
+        # Backward pass
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
+        scheduler.step(loss)
+        
+        if loss.item() < best_loss:
+            best_loss = loss.item()
+            best_model_state = model.state_dict().copy()
         
         if (epoch + 1) % 50 == 0:
-            print(f"Epoch {epoch+1}, Loss: {loss.item():.6f}")
+            print(f"Epoch {epoch+1}/{TRAINING_CONFIG['epochs']}, Loss: {loss.item():.6f}")
     
-    # Predict last 40 points
+    # Load best model
+    model.load_state_dict(best_model_state)
     model.eval()
-    predictions = []
-    
-    # Start with last window from training data
-    current_features = df.iloc[150:160][feature_cols].values
+
     
     with torch.no_grad():
-        for i in range(40):
-            input_scaled = scaler_X.transform(current_features)
-            input_tensor = torch.FloatTensor(input_scaled).unsqueeze(0)
-            
-            pred_scaled = model(input_tensor)[:, -1, :]
-            pred = scaler_Y.inverse_transform(pred_scaled.numpy())
-            predictions.append(pred[0])
-            
-            if i < 39:
-                current_features = np.vstack([current_features[1:], df.iloc[160+i][feature_cols].values])
-    
-    predictions = np.array(predictions).astype(int)
+        # Method 1: Use the trained model to predict based on the last part of training sequence
+        # We'll use the last 40 points of features as context
+        X_val_scaled = scaler_X.transform(X_val)
+        X_val_seq = torch.FloatTensor(X_val_scaled).unsqueeze(0)  # (1, 40, 7)
+        
+        # Predict
+        pred_scaled = model(X_val_seq)  # (1, 40, 2)
+        pred_scaled = pred_scaled.squeeze(0).numpy()  # (40, 2)
+        
+        # Inverse transform
+        predictions = scaler_Y.inverse_transform(pred_scaled)
+        predictions = predictions.astype(int)
     
     # Evaluate
     rmse_x = np.sqrt(mean_squared_error(Y_val[:, 0], predictions[:, 0]))
     rmse_y = np.sqrt(mean_squared_error(Y_val[:, 1], predictions[:, 1]))
-    
-    print(f"\nValidation RMSE - X: {rmse_x:.2f}, Y: {rmse_y:.2f}")
+    rmse_combined = np.sqrt((rmse_x**2 + rmse_y**2) / 2)
     
     # Save model
     model_dir = Path('results/models')
@@ -129,7 +133,7 @@ def train_model():
         },
         'scaler_X': scaler_X,
         'scaler_Y': scaler_Y,
-        'window_size': window_size
+        'best_loss': best_loss
     }, model_dir / 'lstm_single_sequence.pth')
     
     return predictions, Y_val
